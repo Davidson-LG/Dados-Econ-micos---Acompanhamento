@@ -15,6 +15,116 @@ execute:
 
 ---
 
+```{python}
+#| echo: false
+#| warning: false
+
+### Bibliotecas
+
+import pandas as pd
+import ipeadatapy as ipea
+import plotnine as p9
+import sidrapy as sidra
+
+### Importando dados
+
+# PIB
+dados_brutos = list(map(
+    lambda tabela, variavel: 
+        sidra.get_table(
+            table_code = tabela,
+            ibge_territorial_code=1,
+            period = 'all',
+            territorial_level=1,
+            variable_code = variavel,
+            classifications=
+            {
+                "11255": "90687,90691,90696,90707,93404,93405,93406,93407,93408"
+            }
+        ),
+    ["1620", "1621", "1846", "6612", "6613"],
+    ["583", "584", "585", "9318", "9319"]
+))
+
+# PIB tratamento
+dados_tratados = (
+    pd.concat(
+        objs = dados_brutos,
+        keys = ['num_indice', 'num_indice_sa', 'precos_correntes', 'precos_constantes', 'precos_constantes_sa'],
+        names = ['tabela', 'linha']
+
+    )
+    .reset_index()
+    .rename(
+        columns={
+            "tabela": "variavel",
+            "V": "valor",
+            "D2C": "data",
+            "D3N": "setor"
+        }
+    )
+    .filter(
+        items = ['variavel', 'valor', "data", "setor"],
+        axis = 1
+    )
+    .query(
+        "valor != 'Valor' and valor != '...'"
+    )
+    .assign(
+        data = lambda x: pd.to_datetime(x.data, format = "%Y%m"),
+        valor = lambda x: x.valor.astype(float)
+        
+    )
+    .replace(
+        to_replace={
+            "setor": 
+            {
+                "Agropecuária - total": "Agropecuária",
+                "Indústria - total": "Indústria",
+                "Serviços - total": "Serviços",
+                "PIB a preços de mercado": "PIB",
+                "Despesa de consumo das famílias": "Consumo das famílias",
+                "Despesa de consumo da administração pública": "Despesa do Governo",
+                "Formação bruta de capital fixo": "FBCF",
+                "Exportação de bens e serviços": "Exportação",
+                "Importação de bens e serviços (-)": "Importação"
+            },
+            "variavel": {
+                "num_indice": "Número Índice",
+                "num_indice_sa": "Número Índice ajus. saz.",
+                "precos_correntes": "Preços Correntes",
+                "precos_constantes": "Preços Constantes",
+                "precos_constantes_sa": "Preços Constantes ajus. saz."
+            }
+        }
+    )
+)
+
+# Criando colunas PIB
+
+taxas = (
+    dados_tratados
+    .query("variavel in ['Número Índice', 'Número Índice ajus. saz.']")
+    .pivot(
+        index = ['data', 'setor'], columns = "variavel", values = "valor",
+        
+    )
+    .reset_index()
+    .sort_values('data')
+)
+
+taxas['var_margem'] = (
+    taxas.groupby('setor')['Número Índice']
+    .apply(lambda x: x.pct_change(1)*100)
+    .reset_index(level = 0, drop = True)
+
+    
+)
+
+
+```
+
+
 ## Acompanhamento de dados econômicos
 
 A partir da coleta de dados disponibilizados por fontes públicas, foi realizado o presente relatório para auxiliar no processo de tomada de decisões baseado em números, com foco em dados ligados à atividade econômica. Outros dados relevantes podem ser vistos na seguinte página: https://davidson.quarto.pub/.
